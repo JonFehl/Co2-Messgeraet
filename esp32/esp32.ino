@@ -5,15 +5,17 @@
 #include <Wire.h> 
 #include "FS.h"
 #include "SD.h"
+#include <SPI.h>
 #include <U8g2lib.h>
+#include <DS1302.h>
+#include <Time.h>
 
-
-//------------Zugangsdaten WLAN ESP32----------------//
+// ------------Zugangsdaten WLAN ESP32---------------- //
 const char *ssid = "MyESP32AP";
 const char *password = "123456789";
 
 
-//------------globale Variablen----------------//
+// ------------globale Variablen---------------- //
 float co2;
 float tvoc;
 float temperatur;
@@ -21,26 +23,34 @@ String co2ywert;
 int ywert[121];
 unsigned long previousMillis = 0;
 const long interval = 60000;
-String inputMessage1;
 
 
-//------------Display----------------//
+
+// ------------RTC DS1302---------------- //
+DS1302 rtc(4, 13, 14);
+
+// Init a Time-data structure
+Time t;
+
+
+
+// ------------Display---------------- //
 U8X8_SSD1306_128X64_NONAME_HW_I2C u8x8(/* reset=*/ U8X8_PIN_NONE);
 
 
-//------------Initalisierung Webserver---------------- //
+// ------------Initalisierung Webserver---------------- //
 AsyncWebServer server(80);
 
 
-//------------Initalisierung Umweltsensor---------------- //
+// ------------Initalisierung Umweltsensor---------------- //
 Adafruit_CCS811 ccs;
 
-//------------Initalisierung SD Karte---------------- //
+// ------------Initalisierung SD Karte---------------- //
 #define SD_CS 5
 
 
 // ------------Initalisierung LEDs---------------- //
-int ledGruen = 14;
+int ledGruen = 25;
 int ledGelb = 27;
 int ledRot = 26;
 
@@ -58,13 +68,13 @@ void writeFile(fs::FS &fs, const char * path, const char * message) {
     u8x8.print("Fehler");
     u8x8.setCursor(1, 3);
     u8x8.print("SD Karte");
-    
     return;
   }
+
   if (file.print(message)) {
     Serial.println("Auf die SD Karte geschrieben");
   } else {
-    Serial.println("Error es konnte nicht auf die SD Karte geschrieben werden");
+    Serial.println("Error es konnte nicht auf die SD KArte geschrieben werden");
     u8x8.clearDisplay();
     u8x8.setFont(u8x8_font_8x13B_1x2_f);
     u8x8.setCursor(1, 0);
@@ -80,7 +90,7 @@ void writeFile(fs::FS &fs, const char * path, const char * message) {
 
 // ------------Werte an SD Karte anhängen SD Karte---------------- //
 void appendFile(fs::FS &fs, const char * path, const char * message) {
-
+ 
   Serial.printf("Appending to file: %s\n", path);
   File file = fs.open(path, FILE_APPEND);
   if (!file) {
@@ -93,6 +103,7 @@ void appendFile(fs::FS &fs, const char * path, const char * message) {
     u8x8.print("SD Karte");
     return;
   }
+
   if (file.print(message)) {
     Serial.println("Nachricht angekommen");
   } else {
@@ -103,7 +114,6 @@ void appendFile(fs::FS &fs, const char * path, const char * message) {
     u8x8.print("Fehler");
     u8x8.setCursor(1, 3);
     u8x8.print("SD Karte");
-    
   }
   file.close();
 }
@@ -111,12 +121,51 @@ void appendFile(fs::FS &fs, const char * path, const char * message) {
 
 // ------------Werte auf SD Karte schreiben---------------- //
 void SDCard() {
+  t = rtc.getTime();
+  Serial.print("Datum:");
+  Serial.print(t.date, DEC);
+  Serial.print(":");
+  Serial.print(rtc.getMonthStr());
+  Serial.print(":");
+  Serial.print(t.year, DEC);
+  Serial.println("");
+  Serial.print(t.dow, DEC);
+  Serial.print(":");
+  Serial.print(t.hour, DEC);
+  Serial.print(":");
+  Serial.print(t.min, DEC);
+  Serial.print(":");
+  Serial.print(t.sec, DEC);
+  Serial.println("");
+
+  if(int(t.year) <= 2020) {
+    Serial.println("Error Falscher RTC Wert");
+    u8x8.clearDisplay();
+    u8x8.setFont(u8x8_font_8x13B_1x2_f);
+    u8x8.setCursor(1, 0);
+    u8x8.print("Fehler");
+    u8x8.setCursor(1, 3);
+    u8x8.print("RTC");
+  }
 
   //SD Karte Werte schreiben
-  String dataMessage = String(temperatur) + ";" + String(co2) + ";" + String(tvoc) + "\r\n";
-  Serial.print("Save data: ");
-  Serial.println(dataMessage);
-  appendFile(SD, "/data.csv", dataMessage.c_str());
+  String dataMessage =  String(t.date) + "/" + String(t.mon) + "/" + String(t.year) + ";" 
+                      + String(t.hour) + ":" + String(t.min) + ":" + String(t.sec) + ";" 
+                      + String(temperatur) + ";" + String(int(co2)) + ";" + String(int(tvoc)) + "\r\n";
+  //String dataMessage =  String(temperatur) + ";" + String(int(co2)) + ";" + String(int(tvoc)) + "\r\n";
+  if(dataMessage.length() <= 38) {
+    Serial.print("Save data: ");
+    Serial.println(dataMessage);
+    appendFile(SD, "/data.csv", dataMessage.c_str());
+  } else { 
+    Serial.println("Error Nachricht nicht angekommen, Falscher String");
+    u8x8.clearDisplay();
+    u8x8.setFont(u8x8_font_8x13B_1x2_f);
+    u8x8.setCursor(1, 0);
+    u8x8.print("Fehler");
+    u8x8.setCursor(1, 3);
+    u8x8.print("String SD");
+  }
 }
 
 // ------------wird benötigt, damit beim laden der Webseite ein Wert steht---------------- //
@@ -141,35 +190,33 @@ String processor(const String& var){
 void ledCo2() {
 
       //Daten zum Testen ausgeben
-     // Serial.print("CO2: ");
-      //Serial.print(co2);
-      //Serial.print("ppm, TVOC: ");
-      //Serial.print(tvoc);
-      //Serial.print("ppb Temp:");
-      //Serial.print(temperatur);
-      Serial.print("Nachricht:");
-      Serial.println(inputMessage1);
+      Serial.print("CO2: ");
+      Serial.print(co2);
+      Serial.print("ppm, TVOC: ");
+      Serial.print(tvoc);
+      Serial.print("ppb Temp:");
+      Serial.println(temperatur);
 
       //LED Ansteuerung
-      if (co2 < 700) {
+      if (co2 < 600) {
         digitalWrite(ledGruen, HIGH);
         digitalWrite(ledGelb, LOW);
         digitalWrite(ledRot, LOW);
       }
 
-      else if ((co2 >= 700) and (co2 < 1000)) {
+      else if ((co2 >= 600) and (co2 < 900)) {
         digitalWrite(ledGruen, HIGH);
         digitalWrite(ledGelb, HIGH);
         digitalWrite(ledRot, LOW);
       }
 
-      else if ((co2 >= 1000) and (co2 < 1300)) {
+      else if ((co2 >= 900) and (co2 < 1200)) {
         digitalWrite(ledGruen, LOW);
         digitalWrite(ledGelb, HIGH);
         digitalWrite(ledRot, LOW);
       }
 
-      else if ((co2 >= 1300) and (co2 < 1500)) {
+      else if ((co2 >= 1200) and (co2 < 1500)) {
         digitalWrite(ledGruen, LOW);
         digitalWrite(ledGelb, HIGH);
         digitalWrite(ledRot, HIGH);
@@ -203,6 +250,7 @@ void display() {
   
 }
 
+
 // ------------Void Setup---------------- //
 void setup(){
   
@@ -222,16 +270,34 @@ void setup(){
   u8x8.setPowerSave(0);
   u8x8.clearDisplay();
   
+  //RTC starten
+  rtc.halt(false);
+  rtc.writeProtect(false);
+
+  //nur einkommentieren, wenn der RTC kalibriert werden muss!
+  
+  rtc.setDOW(SATURDAY);         // Set Tag der Woche 
+  rtc.setTime(16, 25, 0);     // Uhrzeit hh:mm:ss
+  rtc.setDate(6, 2, 2021);    // DD:MM:YYYY
+  delay(2000);
+ //Zeit auf dem Display ausgeben
+  t = rtc.getTime();
+  u8x8.clearDisplay();
+  u8x8.setFont(u8x8_font_8x13B_1x2_f);
+  u8x8.setCursor(1, 0);
+  u8x8.print(String(t.date)+":"+ String(t.mon)+":"+String(t.year));
+  u8x8.setCursor(1, 3);
+  u8x8.print(String(t.hour) + ":" + String(t.min) + ":" + String(t.sec));
+  delay(3000);
   //Umweltsensor starten
   while (!ccs.begin()) {
     Serial.println("Failed to start sensor! Please check your wiring.");
-   
+    u8x8.clearDisplay();
     u8x8.setFont(u8x8_font_8x13B_1x2_f);
     u8x8.setCursor(1, 0);
     u8x8.print("Fehler");
     u8x8.setCursor(1, 3);
     u8x8.print("Umweltsensor");
-    
   }
 
   //Temperatur kalibrieren
@@ -251,7 +317,8 @@ void setup(){
   SD.begin(SD_CS);
   while (!SD.begin(SD_CS)) {
     Serial.println("ERROR - SD Karte  konnte nicht initalisiert werden!");
-  
+    
+    u8x8.clearDisplay();
     u8x8.setFont(u8x8_font_8x13B_1x2_f);
     u8x8.setCursor(1, 0);
     u8x8.print("Fehler");
@@ -264,7 +331,7 @@ void setup(){
   if (!file) {
     Serial.println("File existiert nicht");
     Serial.println("Creating file...");
-    writeFile(SD, "/data.csv", "Temperatur; CO2; TVOC \r\n");
+    writeFile(SD, "/data.csv", "Datum;Uhrzeit;Temperatur; CO2; TVOC \r\n");
   } else {
     Serial.println("File exisitiert bereits");
   }
@@ -289,6 +356,7 @@ void setup(){
       ywert[i] = 0;
     }
 
+  
   //WLAN initalisieren und starten
   WiFi.softAP(ssid, password);
  
@@ -301,7 +369,6 @@ void setup(){
   u8x8.print("IP Adresse:");
   u8x8.setCursor(1, 3);
   u8x8.print(WiFi.softAPIP());
-
 
   //Einzelnen Abfragen an den Webserver abrufen
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -320,17 +387,15 @@ void setup(){
      } else {
         request->send(SPIFFS, "/esp32.html", String(), false, processor);
      }
-    });
- // server.on("/update", HTTP_GET, [] (AsyncWebServerRequest *request) {
- //   inputMessage1 = request->getParam("time")->value();
-  //});
+    
+  });
+  
  //Zu highchart.js navigieren
   server.on("/highcharts.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/highcharts.js", "text/javascript");
   });    
   server.begin();
 
-  
   delay(2000);
   u8x8.clearDisplay();
 }
@@ -380,6 +445,6 @@ void loop(){
       co2ywert = co2ywert + ywert[i] + " | ";
     }
   }
-
+ 
   delay(1000);
-  }
+}

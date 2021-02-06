@@ -182,11 +182,12 @@ setInterval(function () {
    
  }, 5000); //5000mSeconds update rate
 
- function toggleCheckbox(element) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", "/update?time="+(new Date()).getTime(), true);
-  xhr.send();
-}
+
+ setInterval(function () {
+  var xhttp = new XMLHttpRequest();
+  xhttp.open("GET", "/update?time="+(new Date()).getTime(), true);
+  xhttp.send();
+},5000);
 
 </script>
 </html>
