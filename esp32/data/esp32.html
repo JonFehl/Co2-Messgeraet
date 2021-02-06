@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="highcharts.js"></script>
+  <style>
+    body {
+      min-width: 310px;
+    	max-width: 800px;
+    	height: 400px;
+      margin: 0 auto;
+    }
+    h2 {
+      font-family: Arial;
+      font-size: 2.5rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h2>ESP32 Web Server</h2>
+  <strong>CO2-Gehalt: </strong><span id="idco2">%XXXX% </span><span > ppm</span><br>
+  <strong>Temperatur: </strong><span id="idtemp">%XXXXXX% </span><span > Grad Celsius</span><br>
+  <strong>TVOC: </strong><span id="idtvoc">%XXXXX% </span><span > ppb</span><br><br>
+  <div id="chart-pressure" class="container"></div><br><br>
+  <div id="chart-act" class="container"></div>
+</body>
+
+
+<script>
+
+
+//uses the timezone of the browser
+Highcharts.setOptions({
+global: {
+ useUTC: false
+ }
+});
+
+
+
+var out = [];
+var data =function(){
+  
+  
+  var xhttp = new XMLHttpRequest();
+     xhttp.onreadystatechange = function() {
+       if (this.readyState == 4 && this.status == 200) {
+        
+          var str = this.responseText;
+          var res = str.split(" | ");
+          var res1=[];
+          for(var i=0; i<res.length;i++) {
+            out.push(res[i]);
+          }
+      }
+     };
+     xhttp.open("GET", "/?yco2", true);
+     xhttp.send();
+     var res = out;
+     var res1=[];
+      for(var i=0; i<res.length;i++) {
+        res1[i]=parseFloat(res[i]);
+      }
+
+      //alert(res1);
+     return res1;
+}
+
+
+var chartL = new Highcharts.Chart({
+  chart:{ renderTo : 'chart-act' },
+  title: { text: 'CO2-Gehalt aktuell' },
+  series: [{
+    showInLegend: false,
+    data: []
+  }],
+  plotOptions: {
+    line: { animation: false,
+      dataLabels: { enabled: true}
+    },
+    series: { color: '#059e8a',
+              name: 'CO2 aktuell'  }
+  },
+  xAxis: { type: 'datetime',
+    dateTimeLabelFormats: { second: '%H:%M:%S' }
+  },
+  yAxis: {
+    title: { text: 'CO2 (ppm)' }
+    
+  },
+  credits: { enabled: false }
+});
+
+
+var chartP = new Highcharts.Chart({
+  chart:{ renderTo : 'chart-pressure' },
+  title: { text: 'CO2 Gehalt der letzten 2 Stunden' },
+  series: [{
+    showInLegend: false,
+    id: 99,
+    data: []
+
+  }],
+  plotOptions: {
+    line: { animation: false,
+      dataLabels: { enabled: true}
+    },
+    series: {  
+              color: '#059e8a',
+              name: 'CO2 Historisch'  }
+  },
+  xAxis: { text: 'Zeitlicher Verlauf von zwei Stunden'
+  },
+  yAxis: {
+    title: { text: 'CO2 (ppm)' }
+    
+  },
+  credits: { enabled: false }
+});
+
+
+setInterval(function () {
+  //chartP.destroy();
+  if(chartP.series[0].data.length > 119) {
+  
+  } else {
+    chartP.series[0].setData(data(),true,false,false);
+   
+  }
+
+}, 10); 
+
+
+setInterval(function () {
+     var xhttp = new XMLHttpRequest();
+     xhttp.onreadystatechange = function() {
+       if (this.readyState == 4 && this.status == 200) {
+        document.getElementById("idco2").innerHTML = this.responseText;
+
+        //*********CHART********************************
+          var x = (new Date()).getTime(),
+          y = parseFloat(this.responseText);
+          //console.log(this.responseText);
+          
+          if(chartL.series[0].data.length > 3000) {
+            chartL.series[0].addPoint([x, y], true, true, true);
+          } else {
+            chartL.series[0].addPoint([x, y], true, false, true);
+          }
+
+       }
+
+        //*********************************************
+     };
+     xhttp.open("GET", "/?co2", true);
+     xhttp.send();
+   
+ }, 5000); //5000mSeconds update rate
+ 
+setInterval(function () {
+     var xhttp = new XMLHttpRequest();
+     xhttp.onreadystatechange = function() {
+       if (this.readyState == 4 && this.status == 200) {
+        document.getElementById("idtemp").innerHTML = this.responseText;
+     };
+    }
+     xhttp.open("GET", "/?temp", true);
+     xhttp.send();
+   
+ }, 5000); //5000mSeconds update rate
+
+ setInterval(function () {
+     var xhttp = new XMLHttpRequest();
+     xhttp.onreadystatechange = function() {
+       if (this.readyState == 4 && this.status == 200) {
+        document.getElementById("idtvoc").innerHTML = this.responseText;
+     };
+    }
+     xhttp.open("GET", "/?tvoc", true);
+     xhttp.send();
+   
+ }, 5000); //5000mSeconds update rate
+
+ function toggleCheckbox(element) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/update?time="+(new Date()).getTime(), true);
+  xhr.send();
+}
+
+</script>
+</html>
